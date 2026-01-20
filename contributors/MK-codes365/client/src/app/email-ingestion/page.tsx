@@ -1,120 +1,142 @@
 "use client";
 
 import { useState } from "react";
-
-interface Subscription {
-  service: string;
-  amount: string | null;
-  billing: string;
-  date: string;
-}
-
-interface ScanResult {
-  found: number;
-  subscriptions: Subscription[];
-}
+import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 
 export default function EmailIngestionPage() {
-  const [isScanning, setIsScanning] = useState(false);
-  const [result, setResult] = useState<ScanResult | null>(null);
-  const [error, setError] = useState<string>("");
+  const { user } = useUser();
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState("");
 
-  const handleScan = async () => {
-    setIsScanning(true);
+  const startIngestion = async () => {
+    if (!user) {
+      setError("You need to be logged in to do this!");
+      return;
+    }
+
+    setLoading(true);
     setError("");
     setResult(null);
 
+    // This is sample data to simulate the "parsed emails" coming from the Gmail API.
+    // In a real app, you'd fetch these from the Gmail scan service first.
+    const sampleParsedEmails = [
+      {
+        merchant: "Netflix",
+        amount: 499,
+        date: new Date().toISOString(),
+        currency: "INR",
+        billingCycle: "monthly",
+      },
+      {
+        merchant: "Amazon Prime",
+        amount: 1499,
+        date: new Date().toISOString(),
+        currency: "INR",
+        billingCycle: "yearly",
+      },
+      {
+        merchant: "Spotify",
+        amount: 119,
+        date: new Date().toISOString(),
+        currency: "INR",
+        billingCycle: "monthly",
+      },
+    ];
+
     try {
-      const response = await fetch("http://localhost:5000/api/email/scan", {
+      const response = await fetch("http://localhost:5000/api/email/ingest", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          userId: user.id,
+          emails: sampleParsedEmails,
+        }),
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || "Failed to scan emails");
-      }
-
       const data = await response.json();
-      setResult(data);
-    } catch (err: any) {
-      setError(err.message || "Something went wrong. Please try again.");
+
+      if (response.ok) {
+        setResult(data.summary);
+      } else {
+        setError(data.error || "Something went wrong during ingestion.");
+      }
+    } catch (err) {
+      setError(
+        "Could not connect to the backend server. Make sure it's running on port 5000!",
+      );
     } finally {
-      setIsScanning(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <span className="text-4xl text-blue-600">📧</span>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                Email Ingestion
-              </h1>
-              <p className="text-gray-600 text-sm">
-                Scan receipts for subscriptions
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-8">
+      <div className="max-w-2xl mx-auto">
+        <Link
+          href="/dashboard"
+          className="text-blue-600 hover:underline mb-6 inline-block"
+        >
+          ← Back to Dashboard
+        </Link>
+
+        <h1 className="text-3xl font-bold mb-4">Email Ingestion</h1>
+        <p className="text-gray-600 dark:text-gray-400 mb-8">
+          This page scans your connected email for subscription receipts and
+          adds them to your dashboard.
+        </p>
+
+        {!result && (
+          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800">
+            <h2 className="text-xl font-semibold mb-4">Ready to scan?</h2>
+            <button
+              onClick={startIngestion}
+              disabled={loading}
+              className={`w-full py-3 rounded-lg font-medium text-white transition ${
+                loading
+                  ? "bg-blue-400 cursor-not-out"
+                  : "bg-blue-600 hover:bg-blue-700"
+              }`}
+            >
+              {loading ? "Scanning Emails..." : "Start Gmail Scan"}
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-6 p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        {result && (
+          <div className="mt-6 bg-white dark:bg-gray-900 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800">
+            <h2 className="text-xl font-semibold mb-4 text-green-600">
+              Scan Complete!
+            </h2>
+            <div className="space-y-2">
+              <p>
+                ✅ Added: <strong>{result.added}</strong> new subscriptions
+              </p>
+              <p>
+                ⏭️ Skipped: <strong>{result.skipped}</strong> duplicates
+              </p>
+              <p>
+                ❌ Failed: <strong>{result.failed}</strong> records
               </p>
             </div>
+            <Link
+              href="/dashboard"
+              className="mt-6 block text-center py-2 bg-gray-100 dark:bg-gray-800 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+            >
+              View in Dashboard
+            </Link>
           </div>
-
-          <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-6 text-sm text-blue-800">
-            <p className="font-semibold mb-1">Privacy First</p>
-            <p>
-              We only look for billing keywords. Your data is processed
-              securely.
-            </p>
-          </div>
-
-          <button
-            onClick={handleScan}
-            disabled={isScanning}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold py-3 px-4 rounded-xl transition-all shadow-md active:scale-[0.98]"
-          >
-            {isScanning ? "Scanning Gmail..." : "Scan My Emails"}
-          </button>
-
-          {result && (
-            <div className="mt-8 border-t pt-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
-                Results: {result.found} found
-              </h3>
-              <div className="space-y-3">
-                {result.subscriptions.map((sub, i) => (
-                  <div
-                    key={i}
-                    className="flex justify-between items-center p-4 bg-gray-50 rounded-xl border border-gray-100 hover:border-blue-200 transition-colors"
-                  >
-                    <div>
-                      <p className="font-bold text-gray-900">{sub.service}</p>
-                      <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">
-                        {sub.billing}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-black text-gray-900">
-                        {sub.amount || "$?.??"}
-                      </p>
-                      <p className="text-[10px] text-gray-400">
-                        {new Date(sub.date).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="mt-6 p-4 bg-red-50 text-red-700 rounded-xl border border-red-100 text-sm font-medium">
-              ⚠️ {error}
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );
